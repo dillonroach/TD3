@@ -14,15 +14,35 @@ class MyWalkerBase(WalkerBase):
     self.power = power
     self.camera_x = 0
     self.start_pos_x, self.start_pos_y, self.start_pos_z = 0, 0, 0
-    self.walk_target_x = 20  # kilometer away
+    self.walk_target_x = 20  # originally 1 kilometer away, now 20,20m
     self.walk_target_y = 20
     self.body_xyz = [0, 0, 0]
+    self.angle_to_target = None
     
   electricity_cost = -2.0  # cost for using motors -- this parameter should be carefully tuned against reward for making progress, other values less improtant
   stall_torque_cost = -0.1  # cost for running electric current through a motor even at zero rotational speed, small
   foot_collision_cost = -1.0  # touches another leg, or other objects, that cost makes robot avoid smashing feet into itself
   foot_ground_object_names = set(["floor"])  # to distinguish ground and other objects
   joints_at_limit_cost = -0.1  # discourage stuck joints
+    
+  
+  def calc_potential(self):
+    # progress in potential field is speed*dt, typical speed is about 2-3 meter per second, this potential will change 2-3 per frame (not per second),
+    # all rewards have rew/frame units and close to 1.0
+    debugmode = 0
+    if (debugmode):
+      print("calc_potential: self.walk_target_dist")
+      print(self.walk_target_dist)
+      print("self.scene.dt")
+      print(self.scene.dt)
+      print("self.scene.frame_skip")
+      print(self.scene.frame_skip)
+      print("self.scene.timestep")
+      print(self.scene.timestep)
+        
+    reward = -self.walk_target_dist / self.scene.dt
+    
+    return reward
     
   def step(self, a):
     if not self.scene.multiplayer:  # if multiplayer, action first applied to all robots, then global step() called, then _step() for all robots with the same actions
@@ -40,6 +60,13 @@ class MyWalkerBase(WalkerBase):
       print("~INF~", state)
       done = True
 
+    if self.angle_to_target == None:
+        self.angle_to_target = np.arctan2(self.walk_target_y, self.walk_target_x)
+    
+    angle_old = self.angle_to_target
+    self.angle_to_target = self.walk_target_theta - self.body_rpy[2]
+    angle_progress = float( (np.cos(self.angle_to_target) - np.cos(angle_old))/self.scene.dt )
+    
     potential_old = self.potential
     self.potential = self.robot.calc_potential()
     progress = float(self.potential - potential_old)
@@ -76,7 +103,7 @@ class MyWalkerBase(WalkerBase):
       print(feet_collision_cost)
 
     self.rewards = [
-        self._alive, progress, electricity_cost, joints_at_limit_cost, feet_collision_cost
+        self._alive, progress, angle_progress, electricity_cost, joints_at_limit_cost, feet_collision_cost
     ]
     if (debugmode):
       print("rewards=")
@@ -103,8 +130,7 @@ class MyAntBulletEnv(WalkerBaseBulletEnv):
     self.robot = MyAnt()
     
     self.camera_x = 0
-    self.walk_target_x = 20  # originally 1 kilometer away, now 5m
+    self.walk_target_x = 20  # originally 1 kilometer away, now 20,20m
     self.walk_target_y = 20
     self.stateId = -1
     MJCFBaseBulletEnv.__init__(self, self.robot, render)
-    
